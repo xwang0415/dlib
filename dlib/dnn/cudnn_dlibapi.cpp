@@ -30,6 +30,8 @@ static const char* cudnn_get_error_string(cudnnStatus_t s)
             return "CUDNN_STATUS_EXECUTION_FAILED";
         case CUDNN_STATUS_NOT_SUPPORTED:
             return "CUDNN_STATUS_NOT_SUPPORTED";
+        case CUDNN_STATUS_ARCH_MISMATCH:
+            return "CUDNN_STATUS_ARCH_MISMATCH: Your GPU is too old and not supported by cuDNN";
         default:
             return "A call to cuDNN failed";
     }
@@ -258,7 +260,8 @@ namespace dlib
                   (have_same_dimensions(src, dest) ||
                   (src.num_samples()==1 && src.k()==dest.k() && src.nr()==1 && src.nc()==1) ||
                   (src.num_samples()==1 && src.k()==dest.k() && src.nr()==dest.nr() && src.nc()==dest.nc()) ||
-                  (src.num_samples()==1 && src.k()==1 && src.nr()==dest.nr() && src.nc()==dest.nc())) &&
+                  (src.num_samples()==1 && src.k()==1 && src.nr()==dest.nr() && src.nc()==dest.nc()) ||
+                  (src.num_samples()==dest.num_samples() && src.k()==1 && src.nr()==1 && src.nc()==1)) &&
                   is_same_object(src,dest) == false , 
                     "\n\t dest.num_samples(): " << dest.num_samples()
                     <<"\n\t dest.k():           " << dest.k()
@@ -277,6 +280,11 @@ namespace dlib
                 add_scaled(dest, alpha, src);
                 return;
             }
+            else if (src.num_samples()==dest.num_samples() && src.k()==1 && src.nr()==1 && src.nc()==1)
+            {
+                add_cv_to_all_columns(beta, dest, alpha, src);
+                return;
+            }
 
             CHECK_CUDNN(cudnnAddTensor(context(),
                                     &alpha,
@@ -285,32 +293,6 @@ namespace dlib
                                     &beta,
                                     descriptor(dest),
                                     dest.device()));
-        }
-
-        void set_tensor (
-            tensor& t,
-            float value
-        )
-        {
-            if (t.size() == 0)
-                return;
-            CHECK_CUDNN(cudnnSetTensor(context(),
-                                 descriptor(t),
-                                 t.device_write_only(),
-                                 &value));
-        }
-
-        void scale_tensor (
-            tensor& t,
-            float value
-        )
-        {
-            if (t.size() == 0)
-                return;
-            CHECK_CUDNN(cudnnScaleTensor(context(),
-                                   descriptor(t),
-                                   t.device(),
-                                   &value));
         }
 
         void assign_conv_bias_gradient (

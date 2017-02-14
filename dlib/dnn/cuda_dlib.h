@@ -108,6 +108,53 @@ namespace dlib
 
     // -----------------------------------------------------------------------------------
 
+        void inverse_norms (
+            resizable_tensor& invnorms,
+            const tensor& data,
+            const double eps
+        );
+
+        void dot_prods (
+            resizable_tensor& out,
+            const tensor& lhs,
+            const tensor& rhs
+        );
+
+        void scale_columns (
+            tensor& out,
+            const tensor& m,
+            const tensor& v
+        );
+
+        void scale_rows (
+            tensor& out,
+            const tensor& m,
+            const tensor& v
+        );
+
+        void scale_rows2 (
+            float beta, 
+            tensor& out,
+            const tensor& m1,
+            const tensor& m2,
+            const tensor& v1,
+            const tensor& v2
+        );
+
+    // ------------------------------------------------------------------------------------
+
+        void set_tensor (
+            tensor& t,
+            float value
+        );
+
+        void scale_tensor (
+            tensor& t,
+            float value
+        );
+
+    // ------------------------------------------------------------------------------------
+
         void multiply (
             bool add_to,
             tensor& dest,
@@ -188,6 +235,13 @@ namespace dlib
         void add_scaled(
             tensor& dest,
             const float scale,
+            const tensor& src
+        );
+
+        void add_cv_to_all_columns(
+            float beta, 
+            tensor& dest, 
+            float alpha, 
             const tensor& src
         );
 

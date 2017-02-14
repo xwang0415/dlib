@@ -14,6 +14,7 @@
 #include "../smart_pointers_thread_safe.h"
 #include "../smart_pointers.h"
 #include <exception>
+#include <thread>
 
 namespace dlib
 {
@@ -126,7 +127,7 @@ namespace dlib
 
 // ----------------------------------------------------------------------------------------
 
-    class thread_pool_implementation : private multithreaded_object
+    class thread_pool_implementation 
     {
         /*!
             CONVENTION
@@ -411,7 +412,7 @@ namespace dlib
 
         struct task_state_type
         {
-            task_state_type() : is_being_processed(false), task_id(0), next_task_id(2), arg1(0), arg2(0) {}
+            task_state_type() : is_being_processed(false), task_id(0), next_task_id(2), arg1(0), arg2(0), eptr(nullptr) {}
 
             bool is_ready () const 
             /*!
@@ -473,6 +474,8 @@ namespace dlib
         signaler task_done_signaler;
         signaler task_ready_signaler;
         bool we_are_destructing;
+
+        std::vector<std::thread> threads;
 
         // restricted functions
         thread_pool_implementation(thread_pool_implementation&);        // copy constructor

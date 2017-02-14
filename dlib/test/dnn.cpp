@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <vector>
+#include <random>
 #include "../dnn.h"
 
 #include "tester.h"
@@ -339,6 +340,14 @@ namespace
         dlog << LINFO << mat(dest);
         matrix<float> truth1(3,4), truth2(3,4);
 
+        truth1 = 2;
+        DLIB_TEST(max(abs(truth1-mat(src))) < 1e-5);
+        src *= 2;
+        truth1 = 4;
+        DLIB_TEST(max(abs(truth1-mat(src))) < 1e-5);
+        src = 2;
+
+
         truth1 = 7;
         truth2 = 7, 10,  7,  7,
         7, 10,  7,  7,
@@ -592,6 +601,35 @@ namespace
             }
 
 #endif
+        }
+
+        {
+            resizable_tensor A(4,5), B(4);
+
+            tensor_rand rnd;
+            rnd.fill_uniform(A);
+            rnd.fill_uniform(B);
+
+            float alpha = 1.4;
+            float beta = 0.5;
+
+            matrix<float> a(mat(A)), b(mat(B));
+            for (long c = 0; c < a.nc(); ++c)
+            {
+                set_colm(a,c) = beta*colm(a,c) + alpha*b;
+            }
+
+            tt::add(beta, A, alpha, B);
+            DLIB_TEST_MSG(max(abs(mat(A)-a)) < 1e-6, max(abs(mat(A)-a)));
+
+            beta = 0;
+            for (long c = 0; c < a.nc(); ++c)
+            {
+                set_colm(a,c) = beta*colm(a,c) + alpha*b;
+            }
+
+            tt::add(beta, A, alpha, B);
+            DLIB_TEST(max(abs(mat(A)-a)) < 1e-6);
         }
 
         {
@@ -927,7 +965,6 @@ namespace
             A = dest;
             B = dest;
 
-            tensor_rand rnd;
             rnd.fill_uniform(dest);
             rnd.fill_uniform(A);
             rnd.fill_uniform(B);
@@ -959,6 +996,23 @@ namespace
 
             cuda::multiply(false, dest, A, B);
             DLIB_TEST(max(abs(mat(dest)-pointwise_multiply(AA,mat(B)))) < 1e-6); 
+        }
+
+        {
+            resizable_tensor invnorms1, invnorms2;
+            resizable_tensor data(4,5), out1, out2;
+            rnd.fill_uniform(data);
+
+            const double eps = 0.1;
+
+            invnorms2 = reciprocal(sqrt(sum_cols(squared(mat(data))) + eps));
+            tt::inverse_norms(invnorms1, data, eps);
+            DLIB_TEST(max(abs(mat(invnorms1)-mat(invnorms2))) < 1e-6);
+
+            out1.copy_size(data);
+            tt::scale_rows(out1, data, invnorms1);
+            out2 = scale_rows(mat(data), mat(invnorms1));
+            DLIB_TEST(max(abs(mat(out1)-mat(out2))) < 1e-6);
         }
     }
 
@@ -1302,6 +1356,12 @@ namespace
 
     void test_layers()
     {
+        {
+            print_spinner();
+            l2normalize_ l;
+            auto res = test_layer(l);
+            DLIB_TEST_MSG(res, res);
+        }
         {
             print_spinner();
             multiply_ l;
@@ -1678,6 +1738,110 @@ namespace
         error = memcmp(g3.host(), b3g.host(), b3g.size());
         DLIB_TEST(error == 0);
     }
+
+// ----------------------------------------------------------------------------------------
+
+    void test_simple_linear_regression()
+    {
+        ::std::vector<matrix<double>> x(100);
+        ::std::vector<float> y(100);
+        ::std::default_random_engine generator(16);
+        ::std::normal_distribution<float> distribution(0,5);
+        const float true_intercept = 50.0;
+        const float true_slope = 10.0;
+        for ( int ii = 0; ii < 100; ++ii )
+        {
+            const double val = static_cast<double>(ii);
+            matrix<double> tmp(1,1);
+            tmp = val;
+            x[ii] = tmp;
+            y[ii] = (true_intercept + true_slope*static_cast<float>(val) + distribution(generator));
+        }
+
+        using net_type = loss_mean_squared<fc<1, input<matrix<double>>>>;
+        net_type net;
+        layer<1>(net).layer_details().set_bias_learning_rate_multiplier(300);
+        sgd defsolver;
+        dnn_trainer<net_type> trainer(net, defsolver);
+        trainer.set_learning_rate(0.00001);
+        trainer.set_mini_batch_size(50);
+        trainer.set_max_num_epochs(170);
+        trainer.train(x, y);
+
+        const float slope = layer<1>(net).layer_details().get_weights().host()[0];
+        const float slope_error = abs(true_slope - slope);
+        const float intercept = layer<1>(net).layer_details().get_biases().host()[0];
+        const float intercept_error = abs(true_intercept - intercept);
+        const float eps_slope = 0.5, eps_intercept = 1.0;
+
+        DLIB_TEST_MSG(slope_error <= eps_slope,
+                      "Expected slope = " << true_slope << " Estimated slope = " << slope << " Error limit = " << eps_slope);
+        DLIB_TEST_MSG(intercept_error <= eps_intercept,
+                      "Expected intercept = " << true_intercept << " Estimated intercept = " << intercept << " Error limit = " << eps_intercept);
+
+    }
+
+// ----------------------------------------------------------------------------------------
+
+    void test_multioutput_linear_regression()
+    {
+        const int num_outputs = 2;
+        ::std::vector<matrix<double>> x(100);
+        ::std::vector<matrix<float>> y(100);
+        ::std::default_random_engine generator(16);
+        ::std::normal_distribution<float> distribution(0,5);
+        ::std::normal_distribution<float> slope_distribution(10,5);
+        ::std::normal_distribution<float> intercept_distribution(50,10);
+        ::std::vector<float> true_intercepts(num_outputs);
+        ::std::vector<float> true_slopes(num_outputs);
+        for ( int jj = 0; jj < num_outputs; ++jj )
+        {
+            true_slopes[jj] = slope_distribution(generator);
+            true_intercepts[jj] = intercept_distribution(generator);
+        }
+        matrix<float> ytmp(num_outputs, 1);
+        for ( int ii = 0; ii < 100; ++ii )
+        {
+            const double val = static_cast<double>(ii);
+            matrix<double> tmp(1,1);
+            tmp = val;
+            x[ii] = tmp;
+            for ( int jj = 0; jj < num_outputs; ++jj )
+                ytmp(jj, 0) = (true_intercepts[jj] + true_slopes[jj]*static_cast<float>(val) + distribution(generator));
+
+            y[ii] = ytmp;
+        }
+
+        using net_type = loss_mean_squared_multioutput<fc<num_outputs, input<matrix<double>>>>;
+        net_type net;
+        layer<1>(net).layer_details().set_bias_learning_rate_multiplier(900);
+        sgd defsolver;
+        dnn_trainer<net_type> trainer(net, defsolver);
+        trainer.set_learning_rate(0.000015);
+        trainer.set_mini_batch_size(50);
+        trainer.set_max_num_epochs(170);
+        trainer.train(x, y);
+
+        float slope_error = 0.0;
+        float intercept_error = 0.0;
+        const float eps_slope = 0.5, eps_intercept = 2.0;
+
+        for ( int jj = 0; jj < num_outputs; ++jj )
+        {
+            slope_error += abs(layer<1>(net).layer_details().get_weights().host()[jj] - true_slopes[jj]);
+            intercept_error += abs(layer<1>(net).layer_details().get_biases().host()[jj] - true_intercepts[jj]);
+        }
+
+        slope_error /= float(num_outputs);
+        intercept_error /= float(num_outputs);
+
+        DLIB_TEST_MSG(slope_error <= eps_slope,
+                      "Average absolute slope error = " << slope_error << " Error limit = " << eps_slope);
+        DLIB_TEST_MSG(intercept_error <= eps_intercept,
+                      "Average absolute intercept error = " << intercept_error << " Error limit = " << eps_intercept);
+
+    }
+
 // ----------------------------------------------------------------------------------------
 
     class dnn_tester : public tester
@@ -1745,6 +1909,8 @@ namespace
             test_visit_funcions();
             test_copy_tensor_cpu();
             test_concat();
+            test_simple_linear_regression();
+            test_multioutput_linear_regression();
         }
 
         void perform_test()

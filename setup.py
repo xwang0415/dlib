@@ -355,7 +355,7 @@ def read_version():
     major = re.findall("set\(CPACK_PACKAGE_VERSION_MAJOR.*\"(.*)\"", open('dlib/CMakeLists.txt').read())[0]
     minor = re.findall("set\(CPACK_PACKAGE_VERSION_MINOR.*\"(.*)\"", open('dlib/CMakeLists.txt').read())[0]
     patch = re.findall("set\(CPACK_PACKAGE_VERSION_PATCH.*\"(.*)\"", open('dlib/CMakeLists.txt').read())[0]
-    return major + '.' + minor + '.' + patch 
+    return major + '.' + minor + '.' + patch
 
 
 def rmtree(name):
@@ -504,14 +504,20 @@ class build(_build):
 
         # make sure build artifacts are generated for the version of Python currently running
         cmake_extra_arch = []
+
+        inc_dir = get_python_inc()
+        lib_dir = get_config_var('LIBDIR')
+        if (inc_dir != None):
+            cmake_extra_arch += ['-DPYTHON_INCLUDE_DIR=' + inc_dir]
+        if (lib_dir != None):
+            cmake_extra_arch += ['-DCMAKE_LIBRARY_PATH=' + lib_dir]
+
         if sys.version_info >= (3, 0):
             cmake_extra_arch += ['-DPYTHON3=yes']
 
         log.info("Detected platform: %s" % sys.platform)
         if sys.platform == "darwin":
             # build on OS X
-            inc_dir = get_python_inc()
-            cmake_extra_arch += ['-DPYTHON_INCLUDE_DIR={inc}'.format(inc=inc_dir)]
 
             # by default, cmake will choose the system python lib in /usr/lib
             # this checks the sysconfig and will correctly pick up a brewed python lib
@@ -524,8 +530,6 @@ class build(_build):
             if platform_arch == '64bit' and  not generator_set:
                 cmake_extra_arch += get_msvc_win64_generator()
 
-            inc_dir = get_python_inc()
-            cmake_extra_arch += ['-DPYTHON_INCLUDE_DIR={inc}'.format(inc=inc_dir)]
             # this imitates cmake in path resolution
             py_ver = get_python_version()
             for ext in [py_ver.replace(".", "") + '.lib', py_ver + 'mu.lib', py_ver + 'm.lib', py_ver + 'u.lib']:
@@ -605,7 +609,7 @@ setup(
     version=read_version(),
     keywords=['dlib', 'Computer Vision', 'Machine Learning'],
     description='A toolkit for making real world machine learning and data analysis applications',
-    long_description=readme('README.txt'),
+    long_description=readme('README.md'),
     author='Davis King',
     author_email='davis@dlib.net',
     url='https://github.com/davisking/dlib',
